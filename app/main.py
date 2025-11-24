@@ -1,18 +1,34 @@
 from typing import Union
-
 from fastapi import FastAPI
 
-app = FastAPI()
+from app.core.models.base import BaseModel
+from app.core.settings.db import Database
+from contextlib import asynccontextmanager
 
+
+DATABASE_URL = "sqlite+aiosqlite:///./test.db"
+
+db = Database(url=DATABASE_URL)
+
+@asynccontextmanager
+async def lifespan(_fastapi_app: FastAPI):
+   await db.connect()
+   async with db.engine.begin() as connection:
+       await connection.run_sync(BaseModel.metadata.create_all)
+   yield
+   await db.disconnect()
+
+app = FastAPI(lifespan=lifespan)
 
 @app.get("/")
 def read_root():
     return {"Hello": "World"}
 
+@app.get(path="/health", tags=["System"])
+async def health():
+   ok = await db.ping()
+   return {"status": "ok" if ok else "error"}
 
-@app.get("/items/{item_id}")
-def read_item(item_id: int, q: Union[str, None] = None):
-    return {"item_id": item_id, "q": q}
 
 if __name__ == "__main__":
     import uvicorn
