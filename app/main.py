@@ -4,11 +4,17 @@ from fastapi import FastAPI
 from app.core.models.base import BaseModel
 from app.core.settings.db import Database
 from contextlib import asynccontextmanager
+from app.core.settings.db import db
 
-
-DATABASE_URL = "sqlite+aiosqlite:///./test.db"
-
-db = Database(url=DATABASE_URL)
+from app.core.routers import category, ingredient, recipe, recipe_ingredient, saved_recipe, user, auth
+from app.core.models import (
+    user as user_model,
+    category as category_model,
+    recipe as recipe_model,
+    ingredient as ingredient_model,
+    recipe_ingredient as recipe_ingredient_model,
+    saved_recipe as saved_recipe_model
+)
 
 @asynccontextmanager
 async def lifespan(_fastapi_app: FastAPI):
@@ -20,6 +26,14 @@ async def lifespan(_fastapi_app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+
+app.include_router(category.router)
+app.include_router(ingredient.router)
+app.include_router(recipe.router)
+app.include_router(recipe_ingredient.router)
+app.include_router(saved_recipe.router)
+app.include_router(user.router)
+app.include_router(auth.router)
 @app.get("/")
 def read_root():
     return {"Hello": "World"}

@@ -4,7 +4,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import BaseModel
 
 
-class RecipeIngredient(BaseModel):
+class RecipeIngredientModel(BaseModel):
     __tablename__ = "recipe_ingredients"
 
     recipe_id: Mapped[int] = mapped_column(ForeignKey("recipes.id"), primary_key=True)
@@ -12,5 +12,5 @@ class RecipeIngredient(BaseModel):
 
     amount: Mapped[str] = mapped_column(String(50))
 
-    recipe: Mapped["Recipe"] = relationship(back_populates="ingredients")
-    ingredient: Mapped["Ingredient"] = relationship(back_populates="recipe_links")
+    recipe: Mapped["RecipeModel"] = relationship(back_populates="ingredients")
+    ingredient: Mapped["IngredientModel"] = relationship(back_populates="recipes")

@@ -7,7 +7,7 @@ from datetime import datetime
 from .base import BaseModel
 
 
-class User(BaseModel):
+class UserModel(BaseModel):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -16,6 +16,6 @@ class User(BaseModel):
     password: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
-    recipes: Mapped[List["Recipe"]] = relationship(back_populates="author")
-    saved_recipes: Mapped[List["SavedRecipe"]] = relationship(back_populates="user")
+    recipes: Mapped[List["RecipeModel"]] = relationship(back_populates="author")
+    saved_recipes: Mapped[List["SavedRecipeModel"]] = relationship(back_populates="user")
     

@@ -50,3 +50,8 @@ class Database:
            return True
        except SQLAlchemyError:
            return False
+
+
+DATABASE_URL = "sqlite+aiosqlite:///./test.db"
+
+db = Database(url=DATABASE_URL)
