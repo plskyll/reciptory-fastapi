@@ -67,7 +67,7 @@ async def partial_update_user(user_id: int, user: UserPartialUpdateSchema, sessi
     if not existing_user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    for field, value in user.model_dump().items():
+    for field, value in user.model_dump(exclude_unset=True).items():
         if value is not None:
             if field == "password":
                 value = get_password_hash(value)

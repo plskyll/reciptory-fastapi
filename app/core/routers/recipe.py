@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from app.core import auth
+from app.core.models.category import CategoryModel
 from app.core.models.recipe import RecipeModel
 from app.core.models.user import UserModel
 from app.core.schemas.recipe import RecipeResponseSchema, RecipeCreateSchema, RecipePartialUpdateSchema
@@ -34,6 +35,10 @@ async def create_recipe(recipe: RecipeCreateSchema, session: SessionDepend, curr
         cooking_time_minutes=recipe.cooking_time_minutes,
         image_url=recipe.image_url,
     )
+    category = await session.get(CategoryModel, recipe.category_id)
+    if not category:
+        raise HTTPException(status_code=404, detail="Category not found")
+
     session.add(new_recipe)
     await session.commit()
     await session.refresh(new_recipe)

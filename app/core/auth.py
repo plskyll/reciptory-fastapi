@@ -42,13 +42,13 @@ async def access_token_required(
 
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        email: str = payload.get("sub")
-        if email is None:
+        username: str = payload.get("sub")
+        if username is None:
             raise credentials_exception
     except JWTError:
         raise credentials_exception
 
-    query = select(UserModel).where(UserModel.email == email)
+    query = select(UserModel).where(UserModel.username == username)
     result = await session.execute(query)
     user = result.scalars().first()
 

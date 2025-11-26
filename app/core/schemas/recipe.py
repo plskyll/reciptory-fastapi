@@ -4,7 +4,6 @@ from pydantic import BaseModel, Field
 
 
 class RecipeCreateSchema(BaseModel):
-    author_id: int = Field(gt=0)
     category_id: int = Field(gt=0)
     name: str = Field(max_length=100)
     description: Optional[str] = Field(default=None)

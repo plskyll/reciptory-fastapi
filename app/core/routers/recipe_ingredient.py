@@ -84,13 +84,14 @@ async def get_recipe_ingredient(
 @router.patch(
     path="/{recipe_id}/{ingredient_id}",
     response_model=RecipeIngredientResponseSchema,
+    dependencies=[Depends(auth.access_token_required)]
+
 )
 async def partial_update_recipe_ingredient(
         recipe_id: int,
         ingredient_id: int,
         update_data: RecipeIngredientPartialUpdateSchema,
         session: SessionDepend,
-        dependencies=[Depends(auth.access_token_required)]
 ):
     query = sqlalchemy.select(RecipeIngredientModel).where(
         RecipeIngredientModel.recipe_id == recipe_id,
