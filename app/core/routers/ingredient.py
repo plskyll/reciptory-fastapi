@@ -82,7 +82,7 @@ async def partial_update_ingredient(ingredient_id: int, ingredient: IngredientPa
     existing_ingredient = result.scalars().first()
     if not existing_ingredient:
         raise HTTPException(status_code=404, detail="Ingredient not found")
-    for field, value in  ingredient.model_dump().items():
+    for field, value in ingredient.model_dump(exclude_unset=True).items():
         setattr(existing_ingredient, field, value)
     session.add(existing_ingredient)
 

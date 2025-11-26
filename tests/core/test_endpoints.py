@@ -1,6 +1,6 @@
 import pytest
+import pytest_asyncio
 from app.core.utils import get_password_hash
-from app.core.models.user import UserModel
 from tests.core.factories import (
     UserFactory,
     CategoryFactory,
@@ -11,9 +11,7 @@ from tests.core.factories import (
 )
 
 
-# ==========================================
-# ФІКСТУРИ (НАЛАШТУВАННЯ)
-# ==========================================
+# ФІКСТУРИ ДЛЯ FACTORIES
 
 @pytest.fixture(autouse=True)
 def setup_factories(db_session):
@@ -26,34 +24,126 @@ def setup_factories(db_session):
     SavedRecipeFactory._meta.sqlalchemy_session = db_session
 
 
-@pytest.fixture
-async def auth_headers(client):
+@pytest_asyncio.fixture
+async def user_factory(db_session):
+    async def _factory(**kwargs):
+        user = UserFactory(**kwargs)
+        await db_session.commit()
+        await db_session.refresh(user)
+        return user
+
+    return _factory
+
+
+@pytest_asyncio.fixture
+async def category_factory(db_session):
+    async def _factory(**kwargs):
+        category = CategoryFactory(**kwargs)
+        await db_session.commit()
+        await db_session.refresh(category)
+        return category
+
+    return _factory
+
+
+@pytest_asyncio.fixture
+async def ingredient_factory(db_session):
+    async def _factory(**kwargs):
+        ingredient = IngredientFactory(**kwargs)
+        await db_session.commit()
+        await db_session.refresh(ingredient)
+        return ingredient
+
+    return _factory
+
+
+@pytest_asyncio.fixture
+async def recipe_factory(db_session, user_factory, category_factory):
+    """Фікстура для створення рецептів з автоматичним створенням залежностей"""
+
+    async def _factory(**kwargs):
+        # Якщо не передали author_id, створюємо користувача
+        if 'author_id' not in kwargs:
+            user = await user_factory()
+            kwargs['author_id'] = user.id
+
+        # Якщо не передали category_id, створюємо категорію
+        if 'category_id' not in kwargs:
+            category = await category_factory()
+            kwargs['category_id'] = category.id
+
+        recipe = RecipeFactory(**kwargs)
+        await db_session.commit()
+        await db_session.refresh(recipe)
+        return recipe
+
+    return _factory
+
+
+@pytest_asyncio.fixture
+async def recipe_ingredient_factory(db_session, recipe_factory, ingredient_factory):
+    """Фікстура для створення зв'язків рецепт-інгредієнт"""
+
+    async def _factory(**kwargs):
+        # Якщо не передали recipe_id, створюємо рецепт
+        if 'recipe_id' not in kwargs:
+            recipe = await recipe_factory()
+            kwargs['recipe_id'] = recipe.id
+
+        # Якщо не передали ingredient_id, створюємо інгредієнт
+        if 'ingredient_id' not in kwargs:
+            ingredient = await ingredient_factory()
+            kwargs['ingredient_id'] = ingredient.id
+
+        recipe_ingredient = RecipeIngredientFactory(**kwargs)
+        await db_session.commit()
+        await db_session.refresh(recipe_ingredient)
+        return recipe_ingredient
+
+    return _factory
+
+
+@pytest_asyncio.fixture
+async def saved_recipe_factory(db_session, user_factory, recipe_factory):
+    """Фікстура для створення збережених рецептів"""
+
+    async def _factory(**kwargs):
+        # Якщо не передали user_id, створюємо користувача
+        if 'user_id' not in kwargs:
+            user = await user_factory()
+            kwargs['user_id'] = user.id
+
+        # Якщо не передали recipe_id, створюємо рецепт
+        if 'recipe_id' not in kwargs:
+            recipe = await recipe_factory()
+            kwargs['recipe_id'] = recipe.id
+
+        saved_recipe = SavedRecipeFactory(**kwargs)
+        await db_session.commit()
+        await db_session.refresh(saved_recipe)
+        return saved_recipe
+
+    return _factory
+
+
+# ДОПОМІЖНІ ФІКСТУРИ
+
+@pytest_asyncio.fixture
+async def auth_headers(client, user_factory):
     """Створює юзера, логіниться і повертає заголовок з токеном"""
     password = "password"
     hashed_password = get_password_hash(password)
-    user = UserFactory(email="tester@example.com", password=hashed_password)
+    user = await user_factory(username="tester", email="tester@example.com", password=hashed_password)
 
     response = await client.post("/auth/login", data={
-        "username": "tester@example.com",
+        "username": "tester",
         "password": password
     })
     token = response.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
 
 
-@pytest.fixture
-async def current_user(db_session):
-    """Повертає об'єкт юзера, під яким ми залогінені (для перевірок ID)"""
-    # Шукаємо того самого юзера, якого створює auth_headers
-    # (оскільки база очищається, нам треба бути обережними,
-    # краще створити і повернути його, але auth_headers робить це всередині)
-    # Тому тут просто допоміжна функція, якщо треба буде ID
-    pass
-
-
-# ==========================================
 # 1. ТЕСТИ AUTH & SYSTEM (/auth, /, /health)
-# ==========================================
 
 @pytest.mark.asyncio
 async def test_root(client):
@@ -70,62 +160,75 @@ async def test_health(client):
 
 
 @pytest.mark.asyncio
-async def test_login_success(client):
+async def test_login_success(client, user_factory):
     password = "password"
-    UserFactory(email="login@test.com", password=get_password_hash(password))
-    response = await client.post("/auth/login", data={"username": "login@test.com", "password": password})
+    await user_factory(username="loginuser", email="login@test.com", password=get_password_hash(password))
+
+    response = await client.post("/auth/login", data={
+        "username": "loginuser",
+        "password": password
+    })
     assert response.status_code == 200
     assert "access_token" in response.json()
 
 
-# ==========================================
 # 2. ТЕСТИ USERS (/users)
-# ==========================================
 
 @pytest.mark.asyncio
 async def test_create_user(client):
-    payload = {"username": "newuser", "email": "new@test.com", "password": "securepassword"}
+    payload = {
+        "username": "newuser",
+        "email": "new@test.com",
+        "password": "securepassword"
+    }
     response = await client.post("/users/", json=payload)
     assert response.status_code == 201
     assert response.json()["email"] == "new@test.com"
+    assert response.json()["username"] == "newuser"
 
 
 @pytest.mark.asyncio
-async def test_get_users(client):
-    UserFactory.create_batch(2)
+async def test_get_users(client, user_factory):
+    await user_factory()
+    await user_factory()
+
     response = await client.get("/users/")
     assert response.status_code == 200
     assert len(response.json()) >= 2
 
 
 @pytest.mark.asyncio
-async def test_get_user_detail(client):
-    user = UserFactory()
+async def test_get_user_detail(client, user_factory):
+    user = await user_factory()
+
     response = await client.get(f"/users/{user.id}")
     assert response.status_code == 200
     assert response.json()["username"] == user.username
+    assert response.json()["id"] == user.id
 
 
 @pytest.mark.asyncio
-async def test_patch_user(client):
-    user = UserFactory()
+async def test_patch_user(client, user_factory):
+    user = await user_factory()
+
     response = await client.patch(f"/users/{user.id}", json={"username": "patched_name"})
     assert response.status_code == 200
     assert response.json()["username"] == "patched_name"
 
 
 @pytest.mark.asyncio
-async def test_delete_user(client, auth_headers):
-    user = UserFactory()
-    # Видаляти може тільки авторизований (хоча у вас в коді будь-який авторизований може видалити будь-кого)
+async def test_delete_user(client, auth_headers, user_factory):
+    user = await user_factory()
+
     response = await client.delete(f"/users/{user.id}", headers=auth_headers)
     assert response.status_code == 204
-    assert (await client.get(f"/users/{user.id}")).status_code == 404
+
+    # перевірка, що користувач видалений
+    get_response = await client.get(f"/users/{user.id}")
+    assert get_response.status_code == 404
 
 
-# ==========================================
 # 3. ТЕСТИ CATEGORIES (/categories)
-# ==========================================
 
 @pytest.mark.asyncio
 async def test_crud_category(client, auth_headers):
@@ -133,26 +236,30 @@ async def test_crud_category(client, auth_headers):
     response = await client.post("/categories/", json={"name": "Desserts"})
     assert response.status_code == 201
     cat_id = response.json()["id"]
+    assert response.json()["name"] == "Desserts"
 
     # READ LIST
-    assert (await client.get("/categories/")).status_code == 200
+    list_response = await client.get("/categories/")
+    assert list_response.status_code == 200
+    assert len(list_response.json()) > 0
 
     # READ ONE
-    assert (await client.get(f"/categories/{cat_id}")).status_code == 200
+    get_response = await client.get(f"/categories/{cat_id}")
+    assert get_response.status_code == 200
+    assert get_response.json()["name"] == "Desserts"
 
     # UPDATE (PUT)
-    res = await client.put(f"/categories/{cat_id}", json={"name": "Sweets"})
-    assert res.status_code == 200
-    assert res.json()["name"] == "Sweets"
+    update_response = await client.put(f"/categories/{cat_id}", json={"name": "Sweets"})
+    assert update_response.status_code == 200
+    assert update_response.json()["name"] == "Sweets"
 
     # DELETE (Authorized)
-    res = await client.delete(f"/categories/{cat_id}", headers=auth_headers)
-    assert res.status_code == 204
+    delete_response = await client.delete(f"/categories/{cat_id}", headers=auth_headers)
+    assert delete_response.status_code == 204
 
 
-# ==========================================
+
 # 4. ТЕСТИ INGREDIENTS (/ingredients)
-# ==========================================
 
 @pytest.mark.asyncio
 async def test_crud_ingredient(client, auth_headers):
@@ -161,32 +268,40 @@ async def test_crud_ingredient(client, auth_headers):
     response = await client.post("/ingredients/", json=payload)
     assert response.status_code == 201
     ing_id = response.json()["id"]
+    assert response.json()["name"] == "Salt"
 
     # READ
-    assert (await client.get(f"/ingredients/{ing_id}")).status_code == 200
+    get_response = await client.get(f"/ingredients/{ing_id}")
+    assert get_response.status_code == 200
+    assert get_response.json()["name"] == "Salt"
 
     # UPDATE (PUT)
-    res = await client.put(f"/ingredients/{ing_id}", json={"name": "Sea Salt", "calories_per_100g": 0})
-    assert res.status_code == 200
-    assert res.json()["name"] == "Sea Salt"
+    put_response = await client.put(
+        f"/ingredients/{ing_id}",
+        json={"name": "Sea Salt", "calories_per_100g": 0}
+    )
+    assert put_response.status_code == 200
+    assert put_response.json()["name"] == "Sea Salt"
 
     # PARTIAL UPDATE (PATCH)
-    res = await client.patch(f"/ingredients/{ing_id}", json={"calories_per_100g": 1})
-    assert res.status_code == 200
-    assert res.json()["calories_per_100g"] == 1
+    patch_response = await client.patch(
+        f"/ingredients/{ing_id}",
+        json={"calories_per_100g": 1}
+    )
+    assert patch_response.status_code == 200
+    assert patch_response.json()["calories_per_100g"] == 1
 
     # DELETE
-    res = await client.delete(f"/ingredients/{ing_id}", headers=auth_headers)
-    assert res.status_code == 204
+    delete_response = await client.delete(f"/ingredients/{ing_id}", headers=auth_headers)
+    assert delete_response.status_code == 204
 
 
-# ==========================================
 # 5. ТЕСТИ RECIPES (/recipes)
-# ==========================================
 
 @pytest.mark.asyncio
-async def test_create_recipe(client, auth_headers):
-    category = CategoryFactory()
+async def test_create_recipe(client, auth_headers, category_factory):
+    category = await category_factory()
+
     payload = {
         "category_id": category.id,
         "name": "Test Recipe",
@@ -200,8 +315,9 @@ async def test_create_recipe(client, auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_update_recipe(client):
-    recipe = RecipeFactory()
+async def test_update_recipe(client, recipe_factory):
+    recipe = await recipe_factory()
+
     # PUT
     new_data = {
         "category_id": recipe.category_id,
@@ -210,31 +326,30 @@ async def test_update_recipe(client):
         "instructions": "New Instr",
         "cooking_time_minutes": 20
     }
-    res = await client.put(f"/recipes/{recipe.id}", json=new_data)
-    assert res.status_code == 200
-    assert res.json()["name"] == "New Name"
+    put_response = await client.put(f"/recipes/{recipe.id}", json=new_data)
+    assert put_response.status_code == 200
+    assert put_response.json()["name"] == "New Name"
 
     # PATCH
-    res = await client.patch(f"/recipes/{recipe.id}", json={"name": "Patched Name"})
-    assert res.status_code == 200
-    assert res.json()["name"] == "Patched Name"
+    patch_response = await client.patch(f"/recipes/{recipe.id}", json={"name": "Patched Name"})
+    assert patch_response.status_code == 200
+    assert patch_response.json()["name"] == "Patched Name"
 
 
 @pytest.mark.asyncio
-async def test_delete_recipe(client, auth_headers):
-    recipe = RecipeFactory()
-    res = await client.delete(f"/recipes/{recipe.id}", headers=auth_headers)
-    assert res.status_code == 204
+async def test_delete_recipe(client, auth_headers, recipe_factory):
+    recipe = await recipe_factory()
+
+    response = await client.delete(f"/recipes/{recipe.id}", headers=auth_headers)
+    assert response.status_code == 204
 
 
-# ==========================================
 # 6. ТЕСТИ RECIPE INGREDIENTS (/recipe_ingredients)
-# ==========================================
 
 @pytest.mark.asyncio
-async def test_recipe_ingredients_flow(client, auth_headers):
-    recipe = RecipeFactory()
-    ingredient = IngredientFactory()
+async def test_recipe_ingredients_flow(client, auth_headers, recipe_factory, ingredient_factory):
+    recipe = await recipe_factory()
+    ingredient = await ingredient_factory()
 
     # 1. Add ingredient to recipe
     payload = {
@@ -242,56 +357,57 @@ async def test_recipe_ingredients_flow(client, auth_headers):
         "ingredient_id": ingredient.id,
         "amount": "200 g"
     }
-    res = await client.post("/recipe_ingredients/", json=payload, headers=auth_headers)
-    assert res.status_code == 201
+    create_response = await client.post("/recipe_ingredients/", json=payload, headers=auth_headers)
+    assert create_response.status_code == 201
 
     # 2. Get list
-    res = await client.get("/recipe_ingredients/")
-    assert res.status_code == 200
+    list_response = await client.get("/recipe_ingredients/")
+    assert list_response.status_code == 200
 
-    # 3. Get one (Composite key path)
-    res = await client.get(f"/recipe_ingredients/{recipe.id}/{ingredient.id}")
-    assert res.status_code == 200
-    assert res.json()["amount"] == "200 g"
+    # 3. Get one
+    get_response = await client.get(f"/recipe_ingredients/{recipe.id}/{ingredient.id}")
+    assert get_response.status_code == 200
+    assert get_response.json()["amount"] == "200 g"
 
     # 4. Patch
-    res = await client.patch(
+    patch_response = await client.patch(
         f"/recipe_ingredients/{recipe.id}/{ingredient.id}",
         json={"amount": "500 kg"},
         headers=auth_headers
     )
-    assert res.status_code == 200
-    assert res.json()["amount"] == "500 kg"
+    assert patch_response.status_code == 200
+    assert patch_response.json()["amount"] == "500 kg"
 
     # 5. Delete
-    res = await client.delete(f"/recipe_ingredients/{recipe.id}/{ingredient.id}", headers=auth_headers)
-    assert res.status_code == 204
+    delete_response = await client.delete(
+        f"/recipe_ingredients/{recipe.id}/{ingredient.id}",
+        headers=auth_headers
+    )
+    assert delete_response.status_code == 204
 
 
-# ==========================================
-# 7. ТЕСТИ SAVED RECIPES (/saved_recipes)
-# ==========================================
+
+# 7. ТЕСТИ SAVED RECIPES
 
 @pytest.mark.asyncio
-async def test_saved_recipes_flow(client, auth_headers):
-    # Спочатку треба створити рецепт, який ми будемо зберігати
-    recipe = RecipeFactory()
+async def test_saved_recipes_flow(client, auth_headers, recipe_factory):
+    recipe = await recipe_factory()
 
     # 1. Save recipe (User ID береться автоматично з токена auth_headers)
     payload = {"recipe_id": recipe.id}
-    res = await client.post("/saved_recipes/", json=payload, headers=auth_headers)
-    assert res.status_code == 201
-    saved_id = res.json()["id"]
+    create_response = await client.post("/saved_recipes/", json=payload, headers=auth_headers)
+    assert create_response.status_code == 201
+    saved_id = create_response.json()["id"]
 
     # 2. Get list
-    res = await client.get("/saved_recipes/")
-    assert res.status_code == 200
-    assert len(res.json()) > 0
+    list_response = await client.get("/saved_recipes/")
+    assert list_response.status_code == 200
+    assert len(list_response.json()) > 0
 
     # 3. Get one
-    res = await client.get(f"/saved_recipes/{saved_id}")
-    assert res.status_code == 200
+    get_response = await client.get(f"/saved_recipes/{saved_id}")
+    assert get_response.status_code == 200
 
     # 4. Delete
-    res = await client.delete(f"/saved_recipes/{saved_id}", headers=auth_headers)
-    assert res.status_code == 204
+    delete_response = await client.delete(f"/saved_recipes/{saved_id}", headers=auth_headers)
+    assert delete_response.status_code == 204

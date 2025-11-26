@@ -77,7 +77,7 @@ async def update_recipe(recipe_id: int, recipe: RecipeCreateSchema, session: Ses
     existing_recipe = result.scalars().first()
     if not existing_recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
-    for field, value in  recipe.model_dump().items():
+    for field, value in  recipe.model_dump(exclude_unset=True).items():
         setattr(existing_recipe, field, value)
     session.add(existing_recipe)
 
@@ -95,7 +95,7 @@ async def partial_update_recipe(recipe_id: int, recipe: RecipePartialUpdateSchem
     existing_recipe = result.scalars().first()
     if not existing_recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
-    for field, value in  recipe.model_dump().items():
+    for field, value in  recipe.model_dump(exclude_unset=True).items():
         setattr(existing_recipe, field, value)
     session.add(existing_recipe)
 

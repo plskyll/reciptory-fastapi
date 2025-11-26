@@ -18,7 +18,7 @@ class UserResponseSchema(BaseModel):
 
 
 class UserPartialUpdateSchema(BaseModel):
-    username: Optional[str] = Field(max_length=50)
-    email: Optional[str] = Field(max_length=100)
-    password: Optional[str] = Field(max_length=255)
+    username: Optional[str] = Field(default=None, max_length=50)
+    email: Optional[str] = Field(default=None, max_length=100)
+    password: Optional[str] = Field(default=None, max_length=255)
 
